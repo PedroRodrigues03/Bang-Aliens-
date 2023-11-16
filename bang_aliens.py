@@ -8,6 +8,8 @@ from ship import Ship
 from bullet import Bullet
 from alien import Alien
 from game_stats import GameStats
+from button import Button
+from scoreboard import Scoreboard
 
 class BangAliens:
     """Overall class to manage game assets and behavior."""
@@ -25,17 +27,22 @@ class BangAliens:
         self.settings.screen_height = self.screen.get_rect().height
         pygame.display.set_caption("Bang, Aliens!")
 
-        #Create an instance to store game statistics
+        #Create an instance to store game statistics, and create a scoreboar
         self.stats = GameStats(self)
+        self.sb = Scoreboard(self)
 
         self.ship = Ship(self)
         self.bullets = pygame.sprite.Group()
         self.aliens = pygame.sprite.Group()
 
+        self._create_fleet()
+        
+        #Make the play button
+        self.play_button = Button(self, "Play")
+
     # The game is controlled by the run_game() method. This method contains a while loop that runs continually. The while loop contains an event loop and code that manages screen updates.
     def run_game(self):
         """Start the main loop for the game."""
-        self._create_fleet()
         while True:
             self._check_events()
 
@@ -56,6 +63,33 @@ class BangAliens:
                 self._check_keydown_events(event)
             elif event.type == pygame.KEYUP:
                 self._check_keyups_events(event)
+            elif event.type == pygame.MOUSEBUTTONDOWN:
+                mouse_pos = pygame.mouse.get_pos()
+                self._check_play_button(mouse_pos)
+
+    
+    def _check_play_button(self, mouse_pos):
+        """Start a new game when the player clicks Play"""
+        button_clicked = self.play_button.rect.collidepoint(mouse_pos)
+        if button_clicked and not self.stats.game_active:
+            #Reset the game statistics
+            self.settings.initialize_dynamic_settings()
+            self.stats.reset_stats()
+            self.stats.game_active = True
+            self.sb.prep_score()
+            self.sb.prep_level()
+            self.sb.prep_ships()
+
+            #Get rid of any remaining aliens and bullets
+            self.aliens.empty()
+            self.bullets.empty()
+
+            #Creates a new fleet and center the ship
+            self._create_fleet()
+            self.ship.center_ship()
+
+            #Hide the mouse cursor
+            pygame.mouse.set_visible(False)
     
     def _check_keydown_events(self, event):
         """Respond to keypresses"""
@@ -99,10 +133,21 @@ class BangAliens:
         #Check for any bullets that have hit aliens. If so, get rid of the bullet and the alien
         collisions = pygame.sprite.groupcollide(self.bullets, self.aliens, True, True)
 
+        if collisions:
+            for aliens in collisions.values():
+                self.stats.score += self.settings.alien_points * len(aliens)
+            self.sb.prep_score()
+            self.sb.check_high_score()
+
         if not self.aliens:
             #Destroy exixting bullets and create new fleet
             self.bullets.empty()
             self._create_fleet()
+            self.settings.increase_speed()
+
+            #Increase level
+            self.stats.level += 1
+            self.sb.prep_level()
 
     def _update_aliens(self):
         """Check if the fleet is at an edge, then update the positions of all aliens in the fleet"""
@@ -159,8 +204,9 @@ class BangAliens:
     def _ship_hit(self):
         """Respond to the ship being hit by any alien"""
         if self.stats.ships_left > 0:
-            #Decrement ships_left
+            #Decrement ships_left, and update scoreboard
             self.stats.ships_left -= 1
+            self.sb.prep_ships()
 
             #Get rid of any remaining aliens and bullets
             self.aliens.empty()
@@ -174,6 +220,7 @@ class BangAliens:
             sleep(0.5)
         else:
             self.stats.game_active = False
+            pygame.mouse.set_visible(True)
 
     def _check_aliens_bottom(self):
         """Check if any aliens have reached the bottom of the screen"""
@@ -191,6 +238,13 @@ class BangAliens:
         for bullet in self.bullets.sprites():
             bullet.draw_bullet()
         self.aliens.draw(self.screen)
+
+        #Draw the score information
+        self.sb.show_score()
+
+        #Draw the play button if the game is inactive
+        if not self.stats.game_active:
+            self.play_button.draw_button()
 
         # Make the most recently drawn screen visible.
         pygame.display.flip()
